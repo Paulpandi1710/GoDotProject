@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://d2mfrcy1phh5b"]
+
+[ext_resource type="Script" path="res://scripts/core/kitchen_art_test.gd" id="1"]
+
+[node name="Node3D" type="Node3D" unique_id=870022698]
+script = ExtResource("1")

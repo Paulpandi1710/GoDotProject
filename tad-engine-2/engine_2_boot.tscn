@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://ksw524e6vqaa"]
+
+[ext_resource type="Script" uid="uid://c84j0jiy0vfxf" path="res://scripts/Engine2SceneBuilder.gd" id="1_hh11w"]
+
+[node name="Engine2Boot" type="Node3D" unique_id=1294822113]
+script = ExtResource("1_hh11w")

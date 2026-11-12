@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cc8yyu7qx42uv"]
+
+[ext_resource type="Script" uid="uid://7wrcl76ugn8v" path="res://dsa_world.gd" id="1_glv2v"]
+
+[node name="DSAWorld" type="Node3D" unique_id=1528374478]
+script = ExtResource("1_glv2v")
