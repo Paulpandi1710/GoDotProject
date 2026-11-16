@@ -154,23 +154,18 @@ func _process(delta):
 
 # ─── INTERACTIVE LAB CONTROLS ───
 func step_interactive():
+	## STEP may click mid during search states — never auto-answers quiz choices.
 	if state == State.GUIDED_CLICK_MID:
 		element_selected(guided_mid, GUIDED_ARRAY[guided_mid])
-		return
-	elif state == State.GUIDED_CHECK_MID:
-		handle_action("FIRST" if GUIDED_ARRAY[guided_mid] == GUIDED_TARGET else "MIDDLE")
-		return
-	elif state == State.GUIDED_UPDATE_BOUNDS:
-		handle_action("FIRST" if GUIDED_TARGET < GUIDED_ARRAY[guided_mid] else "MIDDLE")
 		return
 	elif state == State.PRACTICE_CLICK_MID:
 		element_selected(practice_mid, PRACTICE_ARRAY[practice_mid])
 		return
-	elif state == State.PRACTICE_CHECK_MID:
-		handle_action("FIRST" if PRACTICE_ARRAY[practice_mid] == PRACTICE_TARGET else "MIDDLE")
-		return
-	elif state == State.PRACTICE_UPDATE_BOUNDS:
-		handle_action("FIRST" if PRACTICE_TARGET < PRACTICE_ARRAY[practice_mid] else "MIDDLE")
+	elif state == State.GUIDED_CHECK_MID or state == State.GUIDED_UPDATE_BOUNDS \
+			or state == State.PRACTICE_CHECK_MID or state == State.PRACTICE_UPDATE_BOUNDS:
+		if game_ui and game_ui.has_method("set_hint"):
+			game_ui.set_hint("Decide in the panel (1/2/SPACE). PLAY/STEP won't answer for you.")
+		set_auto_play(false)
 		return
 
 	# General Sandbox Binary Search Step

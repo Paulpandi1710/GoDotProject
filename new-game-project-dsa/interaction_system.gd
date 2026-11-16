@@ -248,7 +248,9 @@ func _perform_interaction(target: Node):
 			audio.play_warp_sound()
 		if is_inside_tree() and get_tree() != null:
 			var lm = get_tree().get_first_node_in_group("lesson_manager")
-			if lm != null and lm.has_method("launch_lesson"):
+			if lm != null and lm.has_method("try_launch_lesson"):
+				lm.try_launch_lesson(topic_idx)
+			elif lm != null and lm.has_method("launch_lesson"):
 				lm.launch_lesson(topic_idx)
 		return
 

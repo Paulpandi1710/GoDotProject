@@ -56,8 +56,11 @@ var _story_stats:   Label
 var _story_hint:    Label
 var _story_choice_btns: Array[Button] = []
 var _story_choice_container: BoxContainer
+var _story_continue_btn: Button
 var _story_code_panel: PanelContainer
 var _story_code_lbl: RichTextLabel
+var _last_choice_title: String = ""
+var _last_choice_options: Array = []
 
 # ─── ANIMATIC QUIZ SYSTEM ────────────────────────────────────
 var _quiz_active: bool = false
@@ -129,8 +132,8 @@ signal ribbon_element_clicked(index: int, value: int)
 # ─── HANDBOOK DATA DICTIONARY ────────────────────────────────
 const HANDBOOK_DATA := {
 	"linear_search": {
-		"title": "SECTOR 01: LINEAR SEARCH",
-		"subtitle": "Sequential Memory Scan • Time Complexity: O(n)",
+		"title": "Chapter 1: Linear Search",
+		"subtitle": "Check every shelf • Time Complexity: O(n)",
 		"code": [
 			"// C Implementation: Linear Search",
 			"int linear_search(int arr[], int n, int target) {",
@@ -156,8 +159,8 @@ const HANDBOOK_DATA := {
 		]
 	},
 	"binary_search": {
-		"title": "SECTOR 02: BINARY SEARCH",
-		"subtitle": "Bifurcation Matrix • Time Complexity: O(log n)",
+		"title": "Chapter 2: Binary Search",
+		"subtitle": "Halve the search space • Time Complexity: O(log n)",
 		"code": [
 			"// C Implementation: Binary Search",
 			"int binary_search(int arr[], int n, int target) {",
@@ -188,8 +191,8 @@ const HANDBOOK_DATA := {
 		]
 	},
 	"bubble_sort": {
-		"title": "SECTOR 03: BUBBLE SORT",
-		"subtitle": "Entropy Stabilization • Time Complexity: O(n²)",
+		"title": "Chapter 3: Bubble Sort",
+		"subtitle": "Swap neighbours to restore order • Time Complexity: O(n²)",
 		"code": [
 			"// C Implementation: Bubble Sort",
 			"void bubble_sort(int arr[], int n) {",
@@ -230,6 +233,7 @@ var _hub_btn: Button
 
 func _ready():
 	add_to_group("dsa_game_ui")
+	layer = 100  ## Keep story/quiz above world chrome
 	_bold_font    = UITheme.make_font(700)
 	_regular_font = UITheme.make_font(400)
 	_current_theme = UITheme.for_algo("linear_search")
@@ -618,162 +622,202 @@ func _build_action_bar(root: Control):
 	col.add_child(_bar_hint)
 
 
-# ─── STORY PANEL (CODA speaks) ───────────────────────────────
+# ─── STORY PANEL (CODA coach dock — bottom, world stays visible) ─
 func _build_story_panel(root: Control):
+	## Transparent pass-through overlay: 3D shelves stay fully visible (laptop + VR).
 	_story_overlay = ColorRect.new()
-	_story_overlay.color    = UITheme.C_BLACK_SCRIM
+	_story_overlay.color = Color(0, 0, 0, 0)
 	_story_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_story_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_story_overlay.visible  = false
+	_story_overlay.visible = false
 	root.add_child(_story_overlay)
 
-	var bottom_anchor := MarginContainer.new()
-	bottom_anchor.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	bottom_anchor.add_theme_constant_override("margin_bottom", 16)
-	bottom_anchor.add_theme_constant_override("margin_left", 60)
-	bottom_anchor.add_theme_constant_override("margin_right", 60)
-	bottom_anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_story_overlay.add_child(bottom_anchor)
-
+	## Bottom coach dock — grow UP from the bottom so it stays on-screen
 	_story_panel = PanelContainer.new()
-	_story_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_story_panel.add_theme_stylebox_override("panel",
-		UITheme.glass_card(_current_theme.accent, 16))
-	bottom_anchor.add_child(_story_panel)
+	_story_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_story_panel.add_theme_stylebox_override("panel", _coach_dock_style(_current_theme.accent))
+	_story_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	_story_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_story_panel.offset_left = 56
+	_story_panel.offset_right = -56
+	_story_panel.offset_bottom = -28
+	_story_panel.offset_top = -220
+	_story_overlay.add_child(_story_panel)
 
-	var m := _margin(_story_panel, 12, 20)
+	var m := _margin(_story_panel, 10, 16)
 	var outer_col := VBoxContainer.new()
-	outer_col.add_theme_constant_override("separation", 8)
+	outer_col.add_theme_constant_override("separation", 6)
 	m.add_child(outer_col)
 
-	# ── Chapter badge ──
-	_story_chapter_badge = _label("CHAPTER 1  •  LINEAR SEARCH", 12, UITheme.C_TEXT_MUTED, true)
-	_story_chapter_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_story_chapter_badge = _label("CHAPTER 1  •  LINEAR SEARCH", 11, UITheme.C_TEXT_MUTED, true)
+	_story_chapter_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	outer_col.add_child(_story_chapter_badge)
 
-	# ── CODA avatar + title row ──
 	var header_row := HBoxContainer.new()
-	header_row.add_theme_constant_override("separation", 14)
+	header_row.add_theme_constant_override("separation", 12)
 	outer_col.add_child(header_row)
 	_story_header_row = header_row
 
 	_coda_body = _build_coda_avatar(_current_theme.accent)
+	_coda_body.custom_minimum_size = Vector2(48, 58)
 	header_row.add_child(_coda_body)
 
 	var title_col := VBoxContainer.new()
-	title_col.add_theme_constant_override("separation", 4)
+	title_col.add_theme_constant_override("separation", 2)
 	title_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header_row.add_child(title_col)
 
-	_story_title = _label("MESSAGE TITLE", 18, _current_theme.accent, true)
+	_story_title = _label("MESSAGE TITLE", 16, _current_theme.accent, true)
 	_story_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	title_col.add_child(_story_title)
 
-	_story_body = _label("", 14, UITheme.C_TEXT_MAIN, false)
-	_story_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	title_col.add_child(_story_body)
+	## Scrollable body so long text never grows over the 3D experiment
+	var body_scroll := ScrollContainer.new()
+	body_scroll.custom_minimum_size = Vector2(0, 72)
+	body_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	title_col.add_child(body_scroll)
 
-	_story_stats = _label("", 14, _current_theme.accent, true)
-	_story_stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_story_body = _label("", 13, UITheme.C_TEXT_MAIN, false)
+	_story_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_story_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body_scroll.add_child(_story_body)
+
+	_story_stats = _label("", 13, _current_theme.accent, true)
+	_story_stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	outer_col.add_child(_story_stats)
 
-	# ── C Code Display Panel ──
 	_story_code_panel = PanelContainer.new()
 	_story_code_panel.add_theme_stylebox_override("panel",
-		UITheme.styled_box(Color(0.02, 0.04, 0.09, 0.96), _current_theme.border, 1, 14))
+		UITheme.styled_box(Color(0.02, 0.04, 0.09, 0.92), _current_theme.border, 1, 10))
 	_story_code_panel.visible = false
 	outer_col.add_child(_story_code_panel)
 
-	var code_margin := _margin(_story_code_panel, 12, 16)
+	var code_margin := _margin(_story_code_panel, 8, 12)
 	_story_code_lbl = RichTextLabel.new()
 	_story_code_lbl.bbcode_enabled = true
 	_story_code_lbl.fit_content = true
 	_story_code_lbl.scroll_active = false
+	_story_code_lbl.custom_minimum_size = Vector2(0, 0)
 	_story_code_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_story_code_lbl.add_theme_font_size_override("normal_font_size", 14)
-	_story_code_lbl.add_theme_font_size_override("bold_font_size", 14)
-	_story_code_lbl.add_theme_font_size_override("italics_font_size", 14)
+	_story_code_lbl.add_theme_font_size_override("normal_font_size", 12)
+	_story_code_lbl.add_theme_font_size_override("bold_font_size", 12)
+	_story_code_lbl.add_theme_font_size_override("italics_font_size", 12)
 	code_margin.add_child(_story_code_lbl)
 
-	# ── Quiz buttons container (horizontal row for non-intrusive bottom dock) ──
 	_story_choice_container = HBoxContainer.new()
-	_story_choice_container.add_theme_constant_override("separation", 12)
+	_story_choice_container.add_theme_constant_override("separation", 10)
 	_story_choice_container.visible = false
+	_story_choice_container.mouse_filter = Control.MOUSE_FILTER_STOP
 	outer_col.add_child(_story_choice_container)
 
 	for i in range(3):
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(0, 46)
+		btn.custom_minimum_size = Vector2(0, 44)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.focus_mode = Control.FOCUS_NONE
+		btn.mouse_filter = Control.MOUSE_FILTER_STOP
 		btn.add_theme_font_override("font", _bold_font)
-		btn.add_theme_font_size_override("font_size", 15)
+		btn.add_theme_font_size_override("font_size", 14)
 		btn.add_theme_color_override("font_color", UITheme.C_WHITE)
 		btn.add_theme_color_override("font_hover_color", UITheme.C_WHITE)
 		btn.add_theme_stylebox_override("normal",
-			UITheme.button_style(Color(0.08, 0.14, 0.28, 0.85), _current_theme.border, 2, 12))
+			UITheme.button_style(Color(0.08, 0.14, 0.28, 0.9), _current_theme.border, 2, 10))
 		btn.add_theme_stylebox_override("hover",
-			UITheme.button_hover_style(_current_theme.accent, 12))
+			UITheme.button_hover_style(_current_theme.accent, 10))
 		btn.add_theme_stylebox_override("pressed",
-			UITheme.button_correct_style(12))
+			UITheme.button_correct_style(10))
 		var idx := i
 		btn.pressed.connect(func(): _on_quiz_button_pressed(idx))
 		_story_choice_container.add_child(btn)
 		_story_choice_btns.append(btn)
 
-	# ── Animatic Feedback Card (In-place Explanation) ──
+	_story_continue_btn = Button.new()
+	_story_continue_btn.custom_minimum_size = Vector2(0, 44)
+	_story_continue_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_story_continue_btn.focus_mode = Control.FOCUS_NONE
+	_story_continue_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	_story_continue_btn.visible = false
+	_story_continue_btn.text = "Continue ▶  (SPACE)"
+	_story_continue_btn.add_theme_font_override("font", _bold_font)
+	_story_continue_btn.add_theme_font_size_override("font_size", 15)
+	_story_continue_btn.add_theme_color_override("font_color", UITheme.C_WHITE)
+	_story_continue_btn.add_theme_stylebox_override("normal",
+		UITheme.button_style(Color(0.05, 0.35, 0.45, 0.95), _current_theme.accent, 2, 10))
+	_story_continue_btn.add_theme_stylebox_override("hover",
+		UITheme.button_hover_style(_current_theme.accent, 10))
+	_story_continue_btn.pressed.connect(_on_continue_pressed)
+	outer_col.add_child(_story_continue_btn)
+
 	_story_feedback_card = PanelContainer.new()
 	_story_feedback_card.add_theme_stylebox_override("panel",
-		UITheme.explanation_box(UITheme.C_GREEN, Color(0.03, 0.10, 0.06, 0.95)))
+		UITheme.explanation_box(UITheme.C_GREEN, Color(0.03, 0.10, 0.06, 0.92)))
 	_story_feedback_card.visible = false
 	outer_col.add_child(_story_feedback_card)
 
-	var fb_m := _margin(_story_feedback_card, 16, 20)
+	var fb_m := _margin(_story_feedback_card, 10, 12)
 	var fb_col := VBoxContainer.new()
-	fb_col.add_theme_constant_override("separation", 10)
+	fb_col.add_theme_constant_override("separation", 6)
 	fb_m.add_child(fb_col)
 
-	_story_feedback_badge = _label("🎉  EXCELLENT! THAT'S CORRECT!", 17, UITheme.C_GREEN, true)
+	_story_feedback_badge = _label("🎉  EXCELLENT! THAT'S CORRECT!", 14, UITheme.C_GREEN, true)
 	fb_col.add_child(_story_feedback_badge)
 
-	_story_feedback_body = _label("", 16, UITheme.C_TEXT_MAIN, false)
+	_story_feedback_body = _label("", 13, UITheme.C_TEXT_MAIN, false)
 	_story_feedback_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	fb_col.add_child(_story_feedback_body)
 
 	var fb_btn_row := HBoxContainer.new()
-	fb_btn_row.add_theme_constant_override("separation", 14)
+	fb_btn_row.add_theme_constant_override("separation", 10)
 	fb_btn_row.alignment = BoxContainer.ALIGNMENT_END
 	fb_col.add_child(fb_btn_row)
 
 	_story_feedback_retry_btn = Button.new()
-	_story_feedback_retry_btn.text = "↺  Try Another Option"
+	_story_feedback_retry_btn.text = "↺  Try Again"
 	_story_feedback_retry_btn.focus_mode = Control.FOCUS_NONE
 	_story_feedback_retry_btn.add_theme_font_override("font", _bold_font)
-	_story_feedback_retry_btn.add_theme_font_size_override("font_size", 14)
+	_story_feedback_retry_btn.add_theme_font_size_override("font_size", 13)
 	_story_feedback_retry_btn.add_theme_color_override("font_color", Color(1.0, 0.9, 0.4))
 	_story_feedback_retry_btn.add_theme_stylebox_override("normal",
-		UITheme.button_style(Color(0.20, 0.15, 0.05, 0.9), UITheme.C_YELLOW, 2, 10))
+		UITheme.button_style(Color(0.20, 0.15, 0.05, 0.9), UITheme.C_YELLOW, 2, 8))
 	_story_feedback_retry_btn.add_theme_stylebox_override("hover",
-		UITheme.button_hover_style(UITheme.C_YELLOW, 10))
+		UITheme.button_hover_style(UITheme.C_YELLOW, 8))
 	_story_feedback_retry_btn.pressed.connect(_on_quiz_retry_pressed)
 	fb_btn_row.add_child(_story_feedback_retry_btn)
 
 	_story_feedback_next_btn = Button.new()
-	_story_feedback_next_btn.text = "Next Question → (SPACE)"
+	_story_feedback_next_btn.text = "Next → (SPACE)"
 	_story_feedback_next_btn.focus_mode = Control.FOCUS_NONE
 	_story_feedback_next_btn.add_theme_font_override("font", _bold_font)
-	_story_feedback_next_btn.add_theme_font_size_override("font_size", 15)
+	_story_feedback_next_btn.add_theme_font_size_override("font_size", 13)
 	_story_feedback_next_btn.add_theme_color_override("font_color", UITheme.C_WHITE)
 	_story_feedback_next_btn.add_theme_stylebox_override("normal",
-		UITheme.button_correct_style(10))
+		UITheme.button_correct_style(8))
 	_story_feedback_next_btn.add_theme_stylebox_override("hover",
-		UITheme.button_hover_style(UITheme.C_GREEN, 10))
+		UITheme.button_hover_style(UITheme.C_GREEN, 8))
 	_story_feedback_next_btn.pressed.connect(_on_quiz_next_pressed)
 	fb_btn_row.add_child(_story_feedback_next_btn)
 
-	_story_hint = _label("SPACE = continue  |  1 / 2 / 3 = select option", 13, UITheme.C_TEXT_MUTED, false)
+	_story_hint = _label("SPACE = continue  |  1 / 2 / 3 = answer  |  Watch shelves above", 12, UITheme.C_TEXT_MUTED, false)
 	_story_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	outer_col.add_child(_story_hint)
+
+
+func _coach_dock_style(accent: Color) -> StyleBoxFlat:
+	## Slim translucent strip — shelves stay readable through/above it
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.02, 0.06, 0.12, 0.72)
+	sb.border_color = Color(accent.r, accent.g, accent.b, 0.80)
+	sb.set_border_width_all(2)
+	sb.corner_radius_top_left = 12
+	sb.corner_radius_top_right = 12
+	sb.corner_radius_bottom_left = 12
+	sb.corner_radius_bottom_right = 12
+	sb.shadow_color = Color(0, 0, 0, 0.40)
+	sb.shadow_size = 10
+	sb.shadow_offset = Vector2(0, -2)
+	return sb
 
 
 # ─── INTERACTIVE DIGITAL HANDBOOK (Archive Codex & Live Lab) ─
@@ -1321,39 +1365,43 @@ func _input(event: InputEvent):
 					if _quiz_active:
 						if _quiz_answered:
 							_on_quiz_next_pressed()
-					elif is_choice_active:
-						if _visible_choice_count() <= 1:
-							_close_story_panel()
-							_emit("FIRST")
-						else:
-							_emit("START")
+						get_viewport().set_input_as_handled()
+					elif is_choice_active and _visible_choice_count() > 1:
+						## Multi-choice quiz: SPACE must NOT auto-pick. Use 1/2/3 or buttons.
+						if _story_hint:
+							_story_hint.text = "Choose an answer: press [1] [2] [3] or click a button"
+						get_viewport().set_input_as_handled()
 					else:
-						_close_story_panel()
-						_emit("START")
+						## Lesson text / single-button / feedback continue
+						_on_continue_pressed()
+						get_viewport().set_input_as_handled()
 				else:
 					_on_deck_step_pressed()
 					_emit("START")
 
 			KEY_B:
-				toggle_handbook()
+				if not _story_overlay.visible:
+					toggle_handbook()
 
 			KEY_P:
-				toggle_play()
+				if not _story_overlay.visible:
+					toggle_play()
 
 			KEY_RIGHT:
-				_on_deck_step_pressed()
+				if not _story_overlay.visible:
+					_on_deck_step_pressed()
 
 			KEY_1:
 				if _story_overlay.visible:
 					if _quiz_active:
 						if not _quiz_answered:
 							_handle_quiz_selection(0)
-					elif is_choice_active:
+					elif is_choice_active and _visible_choice_count() >= 1:
 						_close_story_panel()
 						_emit("FIRST")
 					else:
-						_close_story_panel()
-						_emit("START")
+						_on_continue_pressed()
+					get_viewport().set_input_as_handled()
 
 			KEY_2:
 				if _story_overlay.visible:
@@ -1363,6 +1411,7 @@ func _input(event: InputEvent):
 					elif is_choice_active and _visible_choice_count() >= 2:
 						_close_story_panel()
 						_emit("MIDDLE")
+					get_viewport().set_input_as_handled()
 
 			KEY_3:
 				if _story_overlay.visible:
@@ -1372,18 +1421,22 @@ func _input(event: InputEvent):
 					elif is_choice_active and _visible_choice_count() >= 3:
 						_close_story_panel()
 						_emit("LAST")
+					get_viewport().set_input_as_handled()
 
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var mouse_free := (Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED)
-		if _story_overlay.visible and mouse_free:
-			if _quiz_active:
-				pass
-			elif not is_choice_active:
-				_close_story_panel()
-				_emit("START")
-			elif _visible_choice_count() <= 1:
-				_close_story_panel()
-				_emit("FIRST")
+
+func _on_continue_pressed():
+	if not _story_overlay.visible:
+		return
+	if _quiz_active and _quiz_answered:
+		_on_quiz_next_pressed()
+		return
+	## Wrong-answer feedback: restore the last quiz if we have one
+	if not is_choice_active and _last_choice_options.size() > 1 and _story_continue_btn and _story_continue_btn.visible \
+			and _story_continue_btn.text.begins_with("Try again"):
+		show_choice_message(_last_choice_title, _last_choice_options)
+		return
+	_close_story_panel()
+	_emit("START")
 
 
 func _on_quiz_button_pressed(idx: int):
@@ -1497,12 +1550,25 @@ func _shake_node(node: Control):
 
 func _close_story_panel():
 	_story_overlay.visible = false
+	_story_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	is_choice_active = false
 	_quiz_active = false
 	_quiz_answered = false
 	if _story_feedback_card:
 		_story_feedback_card.visible = false
+	if _story_continue_btn:
+		_story_continue_btn.visible = false
+	if _story_choice_container:
+		_story_choice_container.visible = false
+	## Restore action bar to normal bottom position
+	if _bar_panel:
+		var bar_parent = _bar_panel.get_parent()
+		if bar_parent and bar_parent.get_parent() and bar_parent.get_parent() is MarginContainer:
+			var anchor: MarginContainer = bar_parent.get_parent()
+			anchor.add_theme_constant_override("margin_bottom", 24)
+	_shrink_hud_for_lab(false)
 	_recapture_mouse()
+	_set_lab_chrome_visible(true)
 
 func _emit(action: String):
 	if is_inside_tree() and get_tree() != null:
@@ -1537,7 +1603,7 @@ func _retheme_all():
 	_bar_step.add_theme_color_override("font_color", t.accent)
 	_bar_hint.add_theme_color_override("font_color", UITheme.C_TEXT_MUTED)
 	# Story panel
-	_story_panel.add_theme_stylebox_override("panel", UITheme.glass_card(t.accent, 20))
+	_story_panel.add_theme_stylebox_override("panel", _coach_dock_style(t.accent))
 	_story_title.add_theme_color_override("font_color", t.accent)
 	_story_body.add_theme_color_override("font_color", UITheme.C_TEXT_MAIN)
 	_story_stats.add_theme_color_override("font_color", t.accent)
@@ -1647,28 +1713,47 @@ func _clear_3d_question():
 
 ## Close the story panel — call this instead of modal_overlay.visible = false
 func hide_panel():
-	_story_overlay.visible  = false
-	is_choice_active        = false
-	_quiz_active            = false
-	_quiz_answered          = false
-	if _story_feedback_card:
-		_story_feedback_card.visible = false
+	_close_story_panel()
 	if _story_code_panel:
 		_story_code_panel.visible = false
 	_clear_3d_question()
-	_recapture_mouse()
 
 func panel_is_open() -> bool:
 	return _story_overlay != null and _story_overlay.visible
 
 ## Release mouse for UI interaction (quiz buttons, etc.)
 func _release_mouse_for_ui():
-	if Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
-		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 
 ## Re-capture mouse for 3D gameplay
 func _recapture_mouse():
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+func _prepare_story_overlay():
+	## No full-screen dim — keep the 3D experiment visible for teaching.
+	_story_overlay.visible = true
+	_story_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_story_overlay.color = Color(0, 0, 0, 0)
+	_release_mouse_for_ui()
+	## Keep ribbon/deck off during coach talk; leave top HUD so objective stays visible
+	if _deck_container:
+		_deck_container.visible = false
+	if _array_ribbon_container:
+		_array_ribbon_container.visible = false
+	## Hide formula bar during coach/lab dock — compare math lives on the 3D board
+	if _bar_panel:
+		_bar_panel.visible = false
+
+func _set_lab_chrome_visible(show_lab: bool):
+	## Hide STEP/PLAY deck during dialogue so students focus on CODA / quiz.
+	## _hub_btn is visible only while a lesson is active (not in hub).
+	var in_lesson := (_hub_btn != null and _hub_btn.visible)
+	if _deck_container:
+		_deck_container.visible = show_lab and in_lesson
+	if _array_ribbon_container:
+		_array_ribbon_container.visible = show_lab and in_lesson
+	if _bar_panel:
+		_bar_panel.visible = show_lab and in_lesson
 
 # ─── Story / CODA dialogue ───────────────────────────────────
 
@@ -1677,61 +1762,154 @@ func show_lesson_message(text: Variant):
 	is_choice_active = false
 	_quiz_active = false
 	_quiz_answered = false
+	_last_choice_options = []
 	if _story_code_panel:
 		_story_code_panel.visible = false
 	if _story_feedback_card:
 		_story_feedback_card.visible = false
-	_story_overlay.color = Color(0.0, 0.0, 0.0, 0.0)
-	_story_overlay.visible = true
-	_release_mouse_for_ui()
-	_story_panel.add_theme_stylebox_override("panel", UITheme.glass_card(t.accent, 16))
-	_story_chapter_badge.text = t.chapter.to_upper() + "  •  " + t.name.to_upper()
-	_story_chapter_badge.add_theme_color_override("font_color", t.accent)
-	_story_title.text = "CODA says:"
+	_prepare_story_overlay()
+	_shrink_hud_for_lab(true)
+	## Medium dock for CODA talk — still leaves shelves visible above
+	if _story_panel:
+		_story_panel.offset_top = -188
+		_story_panel.offset_bottom = -16
+	_story_panel.add_theme_stylebox_override("panel", _coach_dock_style(t.accent))
+	if _story_chapter_badge:
+		_story_chapter_badge.visible = true
+		_story_chapter_badge.text = t.chapter.to_upper() + "  •  " + t.name.to_upper()
+		_story_chapter_badge.add_theme_color_override("font_color", t.accent)
+	if _coda_body:
+		_coda_body.visible = true
+	_story_title.text = "CODA"
 	_story_title.add_theme_color_override("font_color", t.accent)
+	_story_title.add_theme_font_size_override("font_size", 16)
+	var body_scroll := _story_body.get_parent() if _story_body else null
+	if body_scroll is ScrollContainer:
+		(body_scroll as ScrollContainer).visible = true
+		(body_scroll as ScrollContainer).custom_minimum_size = Vector2(0, 56)
 	_story_body.text  = str(text)
+	_story_stats.visible = true
 	_story_stats.text = ""
 	_story_choice_container.visible = false
-	_story_hint.text = "SPACE or click to continue"
-	_update_3d_question(str(text), ["Continue (SPACE)"])
+	if _story_continue_btn:
+		_story_continue_btn.visible = true
+		_story_continue_btn.text = "Continue ▶  (SPACE)"
+		_story_continue_btn.add_theme_stylebox_override("normal",
+			UITheme.button_style(Color(0.05, 0.35, 0.45, 0.95), t.accent, 2, 10))
+	if _story_hint:
+		_story_hint.visible = true
+		_story_hint.text = "Watch the shelves  •  Continue or SPACE"
+	## Keep any active lab board; don't dump long dialogue onto 3D text
 
 func show_choice_message(title_text: String, options: Array):
+	## Prefer lab actions when callers pass a plain prompt + short options
+	show_lab_decision_from_array(title_text, options)
+
+
+## Lab actions (MATCH / KEEP SEARCHING) — not exam MCQ wording.
+## Does NOT overwrite the bright 3D compare board above the shelves.
+func show_lab_decision(prompt: String, a: String, b: String = "", c: String = ""):
+	var options: Array = [a]
+	if b != "":
+		options.append(b)
+	if c != "":
+		options.append(c)
+	show_lab_decision_from_array(prompt, options)
+
+
+func show_lab_decision_from_array(prompt: String, options: Array):
 	var t := _current_theme
 	is_choice_active = true
 	_quiz_active = false
 	_quiz_answered = false
+	_last_choice_title = prompt
+	_last_choice_options = options.duplicate()
 	if _story_code_panel:
 		_story_code_panel.visible = false
 	if _story_feedback_card:
 		_story_feedback_card.visible = false
-	_story_overlay.color = Color(0.0, 0.0, 0.0, 0.0)
-	_story_overlay.visible = true
-	_release_mouse_for_ui()
-	_story_panel.add_theme_stylebox_override("panel", UITheme.glass_card(t.accent, 16))
-	_story_chapter_badge.text = t.chapter.to_upper() + "  •  " + t.name.to_upper()
-	_story_chapter_badge.add_theme_color_override("font_color", t.accent)
-	_story_title.text = title_text
-	_story_title.add_theme_color_override("font_color", t.accent)
-	_story_body.text  = ""
+	_prepare_story_overlay()
+	_shrink_hud_for_lab(true)
+	## Slim action strip (~100px) — shelves + bright board stay fully visible
+	if _story_panel:
+		_story_panel.offset_top = -108
+		_story_panel.offset_bottom = -16
+	_story_panel.add_theme_stylebox_override("panel", _coach_dock_style(t.accent))
+	if _story_chapter_badge:
+		_story_chapter_badge.visible = false
+	if _coda_body:
+		_coda_body.visible = false
+	_story_title.text = prompt
+	_story_title.add_theme_color_override("font_color", Color(1.0, 0.92, 0.45))
+	_story_title.add_theme_font_size_override("font_size", 15)
+	_story_body.text = ""
+	## Compact: hide empty body scroll so dock stays short and shelves stay clear
+	var body_scroll := _story_body.get_parent() if _story_body else null
+	if body_scroll is ScrollContainer:
+		(body_scroll as ScrollContainer).custom_minimum_size = Vector2(0, 0)
+		(body_scroll as ScrollContainer).visible = false
+	_story_stats.visible = false
 	_story_stats.text = ""
+	if _story_continue_btn:
+		_story_continue_btn.visible = false
 	_story_choice_container.visible = true
-	_story_hint.text = "Press  [ 1 ]  [ 2 ]  [ 3 ]  or click a button"
+	if _story_hint:
+		_story_hint.visible = false
+
+	var action_colors := [
+		Color(0.08, 0.32, 0.18, 0.95),  ## match / correct-path feel
+		Color(0.28, 0.18, 0.06, 0.95),  ## keep searching
+		Color(0.12, 0.14, 0.28, 0.95),
+	]
+	var border_colors := [
+		Color(0.35, 1.0, 0.55),
+		Color(1.0, 0.78, 0.25),
+		t.border,
+	]
 
 	for i in range(_story_choice_btns.size()):
 		var btn := _story_choice_btns[i]
 		if i < options.size():
-			btn.text = "[ %d ]   %s" % [i + 1, str(options[i])]
+			btn.text = "[ %d ]  %s" % [i + 1, str(options[i])]
 			btn.visible = true
 			btn.disabled = false
 			btn.modulate = Color(1.0, 1.0, 1.0, 1.0)
+			btn.custom_minimum_size = Vector2(0, 48)
 			btn.add_theme_stylebox_override("normal",
-				UITheme.button_style(Color(0.08, 0.14, 0.28, 0.85), t.border, 2, 12))
+				UITheme.button_style(action_colors[i], border_colors[i], 2, 12))
 			btn.add_theme_stylebox_override("hover",
-				UITheme.button_hover_style(t.accent, 12))
+				UITheme.button_hover_style(border_colors[i], 12))
 		else:
 			btn.visible = false
+	## Intentionally skip _update_3d_question — array_system owns the bright board
 
-	_update_3d_question(title_text, options)
+
+## Tiny one-line nudge — does not grow a tall exam panel over the shelves
+func flash_lab_nudge(msg: String):
+	if _story_title:
+		_story_title.text = msg
+		_story_title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.25))
+	if _bar_hint:
+		_bar_hint.text = "👉  " + msg
+
+
+func _shrink_hud_for_lab(compact: bool):
+	if _hud_panel == null:
+		return
+	if compact:
+		_hud_panel.modulate = Color(1, 1, 1, 0.55)
+		if _hud_topic:
+			_hud_topic.add_theme_font_size_override("font_size", 16)
+		if _hud_objective:
+			_hud_objective.visible = false
+		if _hud_shortcuts_row:
+			_hud_shortcuts_row.visible = false
+	else:
+		_hud_panel.modulate = Color(1, 1, 1, 1)
+		if _hud_topic:
+			_hud_topic.add_theme_font_size_override("font_size", 26)
+		if _hud_objective:
+			_hud_objective.visible = true
 
 ## Show dedicated animated quiz question with in-place feedback and next progression
 func show_quiz_question(q_data: Dictionary, current_index: int, total_count: int):
@@ -1752,7 +1930,7 @@ func show_quiz_question(q_data: Dictionary, current_index: int, total_count: int
 	_story_overlay.visible = true
 	_release_mouse_for_ui()
 
-	_story_panel.add_theme_stylebox_override("panel", UITheme.glass_card(t.accent, 16))
+	_story_panel.add_theme_stylebox_override("panel", _coach_dock_style(t.accent))
 	_story_chapter_badge.text = "%s  •  QUESTION %d OF %d" % [t.chapter.to_upper(), current_index + 1, total_count]
 	_story_chapter_badge.add_theme_color_override("font_color", t.accent)
 	_story_title.text = "Knowledge Check"
@@ -1850,55 +2028,80 @@ func show_choice_feedback(text: String):
 		_story_code_panel.visible = false
 	if _story_feedback_card:
 		_story_feedback_card.visible = false
-	_story_overlay.visible = true
-	_release_mouse_for_ui()
-	_story_panel.add_theme_stylebox_override("panel", UITheme.glass_card(_current_theme.accent, 20))
-	_story_title.text = "⚠️  Not quite!"
+	_prepare_story_overlay()
+	_shrink_hud_for_lab(true)
+	if _story_panel:
+		_story_panel.offset_top = -150
+		_story_panel.offset_bottom = -16
+	_story_panel.add_theme_stylebox_override("panel", _coach_dock_style(_current_theme.accent))
+	if _story_chapter_badge:
+		_story_chapter_badge.visible = false
+	if _coda_body:
+		_coda_body.visible = true
+	_story_title.text = "⚠️  Not quite — look at the shelves"
 	_story_title.add_theme_color_override("font_color", UITheme.C_YELLOW)
+	var body_scroll := _story_body.get_parent() if _story_body else null
+	if body_scroll is ScrollContainer:
+		(body_scroll as ScrollContainer).visible = true
+		(body_scroll as ScrollContainer).custom_minimum_size = Vector2(0, 48)
 	_story_body.text  = str(text)
+	_story_stats.visible = false
 	_story_stats.text = ""
 	_story_choice_container.visible = false
-	_story_hint.text = "Think again — press SPACE to retry"
+	if _story_continue_btn:
+		_story_continue_btn.visible = true
+		_story_continue_btn.text = "Try again ▶  (SPACE)"
+		_story_continue_btn.add_theme_stylebox_override("normal",
+			UITheme.button_style(Color(0.35, 0.25, 0.05, 0.95), UITheme.C_YELLOW, 2, 12))
+	if _story_hint:
+		_story_hint.visible = true
+		_story_hint.text = "Try again  •  shelves stay visible above"
 	_shake_panel()
 
 func show_success_message(target, index, comparisons):
 	is_choice_active = false
 	_quiz_active = false
 	_quiz_answered = false
+	_last_choice_options = []
 	if _story_code_panel:
 		_story_code_panel.visible = false
 	if _story_feedback_card:
 		_story_feedback_card.visible = false
-	_story_overlay.visible = true
-	_release_mouse_for_ui()
-	_story_panel.add_theme_stylebox_override("panel", UITheme.glass_card(_current_theme.accent, 20))
+	_prepare_story_overlay()
+	_story_panel.add_theme_stylebox_override("panel", _coach_dock_style(_current_theme.accent))
 	_story_title.text = "🎉  Found it!"
 	_story_title.add_theme_color_override("font_color", UITheme.C_GREEN)
-	_story_body.text  = "CODA: \"File #%s located at shelf %s! It took me just %s checks.\"\n\nPress SPACE to continue to the next chapter." % [str(target), str(index), str(comparisons)]
+	_story_body.text  = "CODA: \"File #%s located at shelf %s! It took me just %s checks.\"" % [str(target), str(index), str(comparisons)]
 	_story_stats.text = "Index %s  |  %s comparison%s" % [str(index), str(comparisons), ("s" if int(comparisons) != 1 else "")]
 	_story_stats.add_theme_color_override("font_color", UITheme.C_GREEN)
 	_story_choice_container.visible = false
-	_story_hint.text = "SPACE to continue"
+	if _story_continue_btn:
+		_story_continue_btn.visible = true
+		_story_continue_btn.text = "Continue ▶  (SPACE)"
+	_story_hint.text = "Click Continue or press SPACE"
 	_pulse_panel(UITheme.C_GREEN)
 
 func show_failure_message(target, comparisons):
 	is_choice_active = false
 	_quiz_active = false
 	_quiz_answered = false
+	_last_choice_options = []
 	if _story_code_panel:
 		_story_code_panel.visible = false
 	if _story_feedback_card:
 		_story_feedback_card.visible = false
-	_story_overlay.visible = true
-	_release_mouse_for_ui()
-	_story_panel.add_theme_stylebox_override("panel", UITheme.glass_card(_current_theme.accent, 20))
+	_prepare_story_overlay()
+	_story_panel.add_theme_stylebox_override("panel", _coach_dock_style(_current_theme.accent))
 	_story_title.text = "🔍  Not here!"
 	_story_title.add_theme_color_override("font_color", UITheme.C_RED)
 	_story_body.text  = "CODA: \"I checked every single shelf — File #%s just isn't in this archive. That's %s checks wasted! Next time we need a smarter approach...\"" % [str(target), str(comparisons)]
 	_story_stats.text = "Total checks: %s" % str(comparisons)
 	_story_stats.add_theme_color_override("font_color", UITheme.C_RED)
 	_story_choice_container.visible = false
-	_story_hint.text = "SPACE to continue"
+	if _story_continue_btn:
+		_story_continue_btn.visible = true
+		_story_continue_btn.text = "Continue ▶  (SPACE)"
+	_story_hint.text = "Click Continue or press SPACE"
 
 ## Show a full-screen dramatic chapter transition.
 ## Emits chapter_transition_finished when the animation is done.
@@ -2016,10 +2219,10 @@ func _build_hub_screen(root: Control):
 	top_row.add_theme_constant_override("separation", 12)
 	col.add_child(top_row)
 
-	var title_lbl := _label("✦ THE QUANTUM ARCHIVE ✦", 32, Color(0.0, 0.95, 1.0), true)
+	var title_lbl := _label("✦ DSA ACADEMY — MODULE 1 ✦", 32, Color(0.0, 0.95, 1.0), true)
 	top_row.add_child(title_lbl)
 
-	var subtitle := _label("NEXUS COMMAND CENTER • CHOOSE AN ALGORITHMIC PROTOCOL TO RESTORE", 13, UITheme.C_TEXT_MUTED, true)
+	var subtitle := _label("QUANTUM ARCHIVE HUB • Choose a chapter (locked chapters open in order)", 13, UITheme.C_TEXT_MUTED, true)
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(subtitle)
 
@@ -2030,8 +2233,8 @@ func _build_hub_screen(root: Control):
 	col.add_child(lore_box)
 	var lm := _margin(lore_box, 12, 18)
 	var lore_text := _label(
-		"CODA: \"Welcome, Architect! The planetary memory cores have suffered timeline entropy.\n"
-		+ "Select a recovery protocol below, or walk up to a physical warp pedestal in the atrium to begin!\"",
+		"CODA: \"Welcome, Trainee! The Quantum Archive scrambled last night.\n"
+		+ "Start with Linear Search, then Binary Search, then Bubble Sort — or walk to a pedestal.\"",
 		15, UITheme.C_TEXT_MAIN, false
 	)
 	lore_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -2047,26 +2250,26 @@ func _build_hub_screen(root: Control):
 		{
 			"id": 0,
 			"icon": "🔍",
-			"title": "SECTOR 01\nLINEAR SEARCH",
-			"complexity": "O(n) Complexity",
+			"title": "CHAPTER 1\nLINEAR SEARCH",
+			"complexity": "O(n)",
 			"color": Color(0.0, 0.85, 1.0),
-			"desc": "Sequential Memory Scan\nChecks nodes one by one until the target frequency matches."
+			"desc": "Find a lost file\nCheck every shelf from index 0 until you find the target."
 		},
 		{
 			"id": 1,
 			"icon": "⚡",
-			"title": "SECTOR 02\nBINARY SEARCH",
-			"complexity": "O(log n) Complexity",
+			"title": "CHAPTER 2\nBINARY SEARCH",
+			"complexity": "O(log n)",
 			"color": Color(0.7, 0.3, 1.0),
-			"desc": "Bifurcation Matrix\nHalves sorted memory on each cycle to locate high-density target."
+			"desc": "Search smarter\nOn sorted shelves, cut the search space in half each step."
 		},
 		{
 			"id": 2,
 			"icon": "🔄",
-			"title": "SECTOR 03\nBUBBLE SORT",
-			"complexity": "O(n²) Complexity",
+			"title": "CHAPTER 3\nBUBBLE SORT",
+			"complexity": "O(n²)",
 			"color": Color(1.0, 0.65, 0.0),
-			"desc": "Entropy Stabilization\nCompares and swaps adjacent nodes until equilibrium is reached."
+			"desc": "Restore order\nCompare neighbours and swap until the Archive is sorted."
 		}
 	]
 
@@ -2104,7 +2307,7 @@ func _build_hub_screen(root: Control):
 		ccol.add_child(spacer)
 
 		var btn := Button.new()
-		btn.text = "✦ ENGAGE PROTOCOL ✦"
+		btn.text = "✦ START CHAPTER ✦"
 		btn.add_theme_font_override("font", _bold_font)
 		btn.add_theme_font_size_override("font_size", 13)
 		btn.add_theme_color_override("font_color", Color(1, 1, 1))
@@ -2138,14 +2341,21 @@ func _on_sector_selected(index: int):
 	hub_topic_selected.emit(index)
 	if is_inside_tree() and get_tree() != null:
 		var lm = get_tree().get_first_node_in_group("lesson_manager")
-		if lm != null and lm.has_method("launch_lesson"):
-			lm.launch_lesson(index)
+		if lm != null and lm.has_method("try_launch_lesson"):
+			lm.try_launch_lesson(index)
 
 func show_hub():
 	if _hub_overlay != null:
 		_hub_overlay.visible = false
 	if _story_overlay != null:
 		_story_overlay.visible = false
+		_story_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if _story_continue_btn:
+		_story_continue_btn.visible = false
+	if _story_choice_container:
+		_story_choice_container.visible = false
+	is_choice_active = false
+	_quiz_active = false
 	if _bar_panel != null:
 		_bar_panel.visible = false
 	if _prog_strip_container != null:
@@ -2159,13 +2369,13 @@ func show_hub():
 	if _hud_panel != null:
 		_hud_panel.visible = true
 	if _hud_chapter:
-		_hud_chapter.text = "CENTRAL HUB"
+		_hud_chapter.text = "DSA ACADEMY"
 	if _hud_topic:
-		_hud_topic.text = "Select Algorithm"
+		_hud_topic.text = "Module 1 Hub"
 	if _hud_icon:
 		_hud_icon.text = "🏛️"
 	if _hud_objective:
-		_hud_objective.text = "Aim Crosshair & Click a Pedestal • [1] [2] [3]"
+		_hud_objective.text = "Click a pedestal • [1] Linear  [2] Binary  [3] Bubble • ESC free mouse"
 	if _hud_target_container:
 		_hud_target_container.visible = false
 	if _hud_shortcuts_row:

@@ -287,6 +287,11 @@ func _create_ceiling_panels(parent: Node3D):
 
 
 func _create_wall(parent: Node3D, pos: Vector3, size: Vector3, color: Color, metallic: float, roughness: float):
+	## Visual mesh + collision so trainees cannot walk through walls (desktop play).
+	var body := StaticBody3D.new()
+	body.position = pos
+	parent.add_child(body)
+
 	var wall := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = size
@@ -296,8 +301,13 @@ func _create_wall(parent: Node3D, pos: Vector3, size: Vector3, color: Color, met
 	mat.metallic = metallic
 	mat.roughness = roughness
 	wall.material_override = mat
-	wall.position = pos
-	parent.add_child(wall)
+	body.add_child(wall)
+
+	var coll := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = size
+	coll.shape = shape
+	body.add_child(coll)
 
 
 func _create_wall_with_windows(parent: Node3D, side: int):
@@ -661,6 +671,16 @@ func _create_single_desk(parent: Node3D, pos: Vector3, desk_mat: StandardMateria
 			leg.material_override = leg_mat
 			leg.position = pos + Vector3(lx, desk_h / 2.0, lz)
 			parent.add_child(leg)
+
+	# Invisible blocker so player cannot walk through the desk
+	var blocker := StaticBody3D.new()
+	blocker.position = pos + Vector3(0, desk_h * 0.5, 0)
+	var bcoll := CollisionShape3D.new()
+	var bshape := BoxShape3D.new()
+	bshape.size = Vector3(desk_w, desk_h, desk_d)
+	bcoll.shape = bshape
+	blocker.add_child(bcoll)
+	parent.add_child(blocker)
 
 
 func _create_desk_chairs(parent: Node3D):
@@ -1078,7 +1098,7 @@ func create_hub_pedestals():
 	# Welcome Header (above whiteboard area)
 	var welcome_label := Label3D.new()
 	welcome_label.name = "WelcomeHeader"
-	welcome_label.text = "✦ SELECT AN ALGORITHM ✦\nChoose a lesson to begin"
+	welcome_label.text = "✦ DSA ACADEMY — MODULE 1 ✦\nRestore the Quantum Archive"
 	welcome_label.font_size = 42
 	welcome_label.modulate = C_CYAN
 	welcome_label.outline_size = 12
@@ -1090,7 +1110,8 @@ func create_hub_pedestals():
 	hub_container.add_child(welcome_label)
 
 	var sub_welcome := Label3D.new()
-	sub_welcome.text = "Aim Crosshair & Click a Pedestal • Or press [1], [2], [3] on Keyboard"
+	sub_welcome.name = "HubSubWelcome"
+	sub_welcome.text = "Start Chapter 1 first • Click a pedestal or press [1] [2] [3] • ESC frees mouse"
 	sub_welcome.font_size = 20
 	sub_welcome.modulate = Color(0.8, 0.9, 1.0)
 	sub_welcome.outline_size = 8
@@ -1106,27 +1127,27 @@ func create_hub_pedestals():
 		{
 			"id": 0,
 			"pos": Vector3(-3.8, 0, -5.5),
-			"title": "SECTOR 01: LINEAR SEARCH",
-			"sub": "Sequential Scan | O(n)",
-			"desc": "Scan nodes one by one until target aligns.\nBest for unsorted memory.",
+			"title": "CHAPTER 1: LINEAR SEARCH",
+			"sub": "Find the lost file | O(n)",
+			"desc": "Check every shelf from index 0.\nWorks on unsorted data.",
 			"color": C_CYAN,
 			"glyph_type": "prism"
 		},
 		{
 			"id": 1,
 			"pos": Vector3(0.0, 0, -6.5),
-			"title": "SECTOR 02: BINARY SEARCH",
-			"sub": "Bifurcation Matrix | O(log n)",
-			"desc": "Halves search space at each step.\nRequires sorted memory.",
+			"title": "CHAPTER 2: BINARY SEARCH",
+			"sub": "Search smarter | O(log n)",
+			"desc": "Halve the search space each step.\nNeeds sorted shelves.",
 			"color": C_PURPLE,
 			"glyph_type": "ring"
 		},
 		{
 			"id": 2,
 			"pos": Vector3(3.8, 0, -5.5),
-			"title": "SECTOR 03: BUBBLE SORT",
-			"sub": "Entropy Stabilizer | O(n²)",
-			"desc": "Swaps adjacent nodes to restore\nordered equilibrium.",
+			"title": "CHAPTER 3: BUBBLE SORT",
+			"sub": "Restore order | O(n²)",
+			"desc": "Swap adjacent shelves until sorted.\nUnlocks fast searching again.",
 			"color": C_AMBER,
 			"glyph_type": "spheres"
 		}
@@ -1319,8 +1340,22 @@ func on_topic_pedestal_hover(topic_idx: int, is_hover: bool):
 
 
 func on_topic_selected(topic_idx: int):
-	if lesson_manager and lesson_manager.has_method("launch_lesson"):
+	if lesson_manager and lesson_manager.has_method("try_launch_lesson"):
+		lesson_manager.try_launch_lesson(topic_idx)
+	elif lesson_manager and lesson_manager.has_method("launch_lesson"):
 		lesson_manager.launch_lesson(topic_idx)
+
+
+func refresh_hub_unlock_labels():
+	var pm = get_node_or_null("/root/ProgressManager")
+	if hub_container == null:
+		return
+	var sub = hub_container.get_node_or_null("HubSubWelcome")
+	if sub and pm:
+		if pm.module1_complete:
+			sub.text = "Module 1 complete — free roam any chapter • [H] Hub • [R] Restart lesson"
+		else:
+			sub.text = "Unlocked through Chapter %d • Click pedestal or [1][2][3] • ESC frees mouse" % (pm.highest_unlocked + 1)
 
 
 func set_hub_active(active: bool):
@@ -1332,6 +1367,8 @@ func set_hub_active(active: bool):
 				var coll = p.get_node_or_null("CollisionShape3D")
 				if coll:
 					coll.disabled = not active
+	if active:
+		refresh_hub_unlock_labels()
 
 
 # ============================================================

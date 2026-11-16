@@ -231,10 +231,11 @@ func _unhandled_input(event):
 	if is_vr:
 		return
 
-	# Mouse capture on click
+	# Mouse capture on click — never while a story/quiz modal is open
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED:
-			# Re-capture if clicking in upper 75% of viewport
+			if _is_ui_panel_open():
+				return
 			var vp_size = get_viewport().get_visible_rect().size
 			if event.position.y < vp_size.y * 0.72:
 				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
@@ -257,15 +258,15 @@ func _unhandled_input(event):
 			else:
 				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
-		# R key — Restart current lesson (Spec §104)
+		# R key — Restart current lesson (disabled in hub)
 		if event.pressed and event.keycode == KEY_R:
 			var managers = get_tree().get_nodes_in_group("lesson_manager")
 			if managers.size() > 0:
 				var manager = managers[0]
-				if manager.has_method("restart_current_lesson"):
+				if manager.get("in_hub") != true and manager.has_method("restart_current_lesson"):
 					manager.restart_current_lesson()
 
-		# H key — Return to Nexus Hub
+		# H key — Return to Hub
 		if event.pressed and event.keycode == KEY_H:
 			var managers = get_tree().get_nodes_in_group("lesson_manager")
 			if managers.size() > 0:
@@ -273,30 +274,16 @@ func _unhandled_input(event):
 				if manager.has_method("return_to_hub"):
 					manager.return_to_hub()
 
-		# B key — Toggle Interactive Book Guide / Codex
-		if event.pressed and event.keycode == KEY_B:
-			if game_ui and game_ui.has_method("toggle_handbook"):
-				game_ui.toggle_handbook()
+		# B / P / Right Arrow are handled only in game_ui.gd (avoid double-toggle)
 
-		# P key — Toggle Auto Play / Pause
-		if event.pressed and event.keycode == KEY_P:
-			if game_ui and game_ui.has_method("toggle_play"):
-				game_ui.toggle_play()
-
-		# Right arrow key — Step algorithm
-		if event.pressed and event.keycode == KEY_RIGHT:
-			var managers = get_tree().get_nodes_in_group("lesson_manager")
-			if managers.size() > 0 and managers[0].has_method("step_interactive"):
-				managers[0].step_interactive()
-
-		# 1, 2, 3 keys — Quick select in Hub mode
+		# 1, 2, 3 keys — Hub chapter select (respects unlock order)
 		if event.pressed and (event.keycode == KEY_1 or event.keycode == KEY_2 or event.keycode == KEY_3):
 			var managers = get_tree().get_nodes_in_group("lesson_manager")
 			if managers.size() > 0:
 				var manager = managers[0]
-				if manager.get("in_hub") == true and manager.has_method("launch_lesson"):
+				if manager.get("in_hub") == true and manager.has_method("try_launch_lesson"):
 					var idx = 0 if event.keycode == KEY_1 else (1 if event.keycode == KEY_2 else 2)
-					manager.launch_lesson(idx)
+					manager.try_launch_lesson(idx)
 
 
 # ============================================================

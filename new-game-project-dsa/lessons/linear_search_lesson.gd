@@ -226,15 +226,13 @@ func _process(delta):
 
 # ─── INTERACTIVE LAB CONTROLS ───
 func step_interactive():
-	if state == State.GUIDED_SEARCHING:
-		if guided_index < GUIDED_ARRAY.size():
-			element_selected(guided_index, GUIDED_ARRAY[guided_index])
-		return
-	elif state == State.GUIDED_COMPARE_SHOW:
-		handle_action("FIRST" if GUIDED_ARRAY[guided_index] == GUIDED_TARGET else "MIDDLE")
-		return
-	elif state == State.GUIDED_RESULT_SHOWN:
-		handle_action("START")
+	## Guided compare questions are auto-shown — STEP only helps practice / lab.
+	if state == State.GUIDED_SEARCHING or state == State.GUIDED_COMPARE_SHOW:
+		if state == State.GUIDED_SEARCHING:
+			_p2_present_current_compare()
+		elif game_ui and game_ui.has_method("set_hint"):
+			game_ui.set_hint("Pick MATCH or KEEP SEARCHING below (1 or 2).")
+		set_auto_play(false)
 		return
 	elif state == State.PRACTICE_SEARCHING:
 		if practice_index < PRACTICE_ARRAY.size():
@@ -247,6 +245,13 @@ func step_interactive():
 	elif state == State.CHALLENGE_SEARCHING:
 		if challenge_index < CHALLENGE_ARRAY.size():
 			element_selected(challenge_index, CHALLENGE_ARRAY[challenge_index])
+		return
+	elif state == State.GUIDED_COMPARE_SHOW or state == State.GUIDED_RESULT_SHOWN \
+			or state == State.GUIDED_PRE_QUIZ or state == State.REFLECT_QUIZ \
+			or state == State.KC_ACTIVE or state == State.CHALLENGE_PREDICT:
+		if game_ui and game_ui.has_method("set_hint"):
+			game_ui.set_hint("Use the lab actions below (1/2). PLAY/STEP won't decide for you.")
+		set_auto_play(false)
 		return
 
 	# General Interactive Sandbox Step
@@ -540,36 +545,26 @@ func _p2_start():
 	game_ui.set_target(GUIDED_TARGET)
 	game_ui.set_step("Guided Search — Where do we start?")
 	game_ui.set_formula("Array: [10, 25, 40, 15, 30]   |   Target: %d" % GUIDED_TARGET)
-	game_ui.show_choice_message(
-		"CODA: \"We're ready to search for File #%d!\"\n\nWhere should Linear Search BEGIN?" % GUIDED_TARGET,
-		[
-			"At INDEX 0 — the very first element  ✅",
-			"At INDEX 2 — the middle element",
-			"At whichever element looks biggest"
-		]
+	if array_system and array_system.has_method("set_array_texts"):
+		array_system.set_array_texts(
+			"START THE SCAN",
+			"Which shelf do we check first?"
+		)
+	game_ui.show_lab_decision(
+		"Linear Search always walks left → right. Where do we start?",
+		"✅  First shelf (INDEX 0)",
+		"Middle shelf",
+		"Biggest-looking shelf"
 	)
 
 
 func _p2_begin_search():
-	state = State.GUIDED_SEARCHING
-	hide_panel()
+	## Do NOT leave the student on an empty 3D view — open the compare question immediately.
 	if array_system:
 		array_system.start_search()
 	_update_guided_bar()
-	game_ui.set_step("→  Click the GLOWING element (Index %d) or press [⏭ STEP]" % guided_index)
-	game_ui.set_hint("Point at and click the highlighted element in 3D, or use the STEP button")
 	_reset_hints()
-	if game_ui:
-		game_ui.highlight_code_line(1)
-		game_ui.set_watch_variables({
-			"Active Index (i)": guided_index,
-			"Array Element arr[i]": GUIDED_ARRAY[guided_index] if guided_index < GUIDED_ARRAY.size() else "--",
-			"Target Value": GUIDED_TARGET,
-			"Comparisons": guided_comparisons,
-			"Status": "Searching Index %d" % guided_index
-		})
-		game_ui.set_complexity_stats(guided_comparisons, GUIDED_ARRAY.size(), "Sequential scan")
-		game_ui.update_array_ribbon(GUIDED_ARRAY, guided_index, GUIDED_TARGET, range(guided_index))
+	_p2_present_current_compare()
 
 
 func _update_guided_bar():
@@ -581,57 +576,90 @@ func _update_guided_bar():
 		)
 
 
-func _p2_element_clicked(index: int, value: int):
-	# Enforce sequential order
-	if index != guided_index:
-		game_ui.show_choice_feedback(
-			("CODA: \"Hold on! We are at INDEX %d right now.\"\n\n"
-			+ "You clicked Index %d — but that hasn't been reached yet!\n\n"
-			+ "Linear Search NEVER skips elements. Click the GLOWING box.") % [
-				guided_index, index
-			]
-		)
+## Highlight the current shelf + show the YES/NO question (always visible).
+func _p2_present_current_compare():
+	if guided_index >= GUIDED_ARRAY.size():
+		state = State.REFLECT_QUIZ
+		game_ui.show_failure_message(GUIDED_TARGET, guided_comparisons)
 		return
 
+	var index := guided_index
+	var value: int = GUIDED_ARRAY[guided_index]
 	_guided_pending_index = index
 	_guided_pending_value = value
 	_guided_quiz_answered = false
-	state                 = State.GUIDED_COMPARE_SHOW
+	state = State.GUIDED_COMPARE_SHOW
 
-	# ── Step 1: Show CURRENT VALUE
-	game_ui.set_step("CURRENT VALUE: %d" % value)
+	if array_system:
+		array_system.current_search_index = index
+		if array_system.has_method("update_active_element"):
+			array_system.update_active_element()
+		## Bright 3D lab board + shelf label (main teaching surface)
+		if array_system.has_method("show_lab_compare"):
+			array_system.show_lab_compare(index, value, GUIDED_TARGET)
+		for e in array_system.element_bodies:
+			if is_instance_valid(e) and int(e.get_meta("array_index", -1)) == index:
+				var tw: Tween = array_system.create_tween()
+				if tw != null:
+					tw.tween_property(e, "scale", Vector3(1.22, 1.22, 1.22), 0.18)
+					tw.tween_property(e, "scale", Vector3.ONE, 0.22)
+				break
 
-	var is_match := (value == GUIDED_TARGET)
-	game_ui.set_formula(
-		"Comparing:  %d  %s  %d  →  %s" % [
-			value,
-			"=" if is_match else "≠",
-			GUIDED_TARGET,
-			"✅  MATCH!" if is_match else "❌  Not a match"
-		]
-	)
+	game_ui.set_step("Lab step %d/%d — watch the glowing shelf" % [index + 1, GUIDED_ARRAY.size()])
+	game_ui.set_formula("arr[%d]=%d   ≟   target=%d" % [index, value, GUIDED_TARGET])
+	game_ui.set_hint("Look at the bright board + shelf, then pick an action")
+	game_ui.highlight_code_line(2)
+	game_ui.set_watch_variables({
+		"Active Index (i)": index,
+		"Array Element arr[i]": value,
+		"Target Value": GUIDED_TARGET,
+		"Comparisons": guided_comparisons,
+		"Status": "Decide from what you SEE"
+	})
+	game_ui.set_complexity_stats(guided_comparisons, GUIDED_ARRAY.size(), "Sequential scan")
+	game_ui.update_array_ribbon(GUIDED_ARRAY, index, GUIDED_TARGET, range(index))
 
-	if game_ui:
-		game_ui.highlight_code_line(2 if not is_match else 3)
-		game_ui.set_watch_variables({
-			"Active Index (i)": index,
-			"Array Element arr[i]": value,
-			"Target Value": GUIDED_TARGET,
-			"Comparisons": guided_comparisons + 1,
-			"Status": "MATCH! Found" if is_match else "Mismatch (%d ≠ %d)" % [value, GUIDED_TARGET]
-		})
-		game_ui.set_complexity_stats(guided_comparisons + 1, GUIDED_ARRAY.size(), "Scanning")
-		game_ui.update_array_ribbon(GUIDED_ARRAY, index, GUIDED_TARGET, range(index), index if is_match else -1)
+	## Lab actions — not exam MCQ wording
+	if game_ui.has_method("show_lab_decision"):
+		game_ui.show_lab_decision(
+			"Look at the board — same number as the target?",
+			"✅  MATCH",
+			"➡️  KEEP SEARCHING"
+		)
+	else:
+		game_ui.show_choice_message(
+			"Look at the board — same number as the target?",
+			["✅  MATCH", "➡️  KEEP SEARCHING"]
+		)
 
-	# ── Step 2: Ask student to predict — forces active thinking
-	game_ui.show_choice_message(
-		("CODA checks Index %d  →  value is  %d\n\n"
-		+ "CURRENT VALUE:  %d\n"
-		+ "TARGET:  %d\n\n"
-		+ "Is  %d  equal to  %d?") % [index, value, value, GUIDED_TARGET, value, GUIDED_TARGET],
-		["YES — %d matches File #%d!" % [value, GUIDED_TARGET],
-		 "NO  — %d is not %d" % [value, GUIDED_TARGET]]
-	)
+
+func _p2_element_clicked(index: int, value: int):
+	# Enforce sequential order — teach on the board, don't cover shelves with a tall modal
+	if index != guided_index:
+		if array_system and array_system.search_feedback and array_system.search_feedback.has_method("show_order_lock"):
+			array_system.search_feedback.show_order_lock(guided_index, index)
+		## Keep MATCH / KEEP SEARCHING actions available (don't wipe the dock)
+		if game_ui and game_ui.has_method("show_lab_decision"):
+			game_ui.show_lab_decision(
+				"No skipping — still at INDEX %d. Decide from the glowing shelf:" % guided_index,
+				"✅  MATCH",
+				"➡️  KEEP SEARCHING"
+			)
+		## Restore compare board after the lock flash so teaching stays clear
+		if array_system and is_inside_tree() and get_tree() != null:
+			var restore_idx := guided_index
+			var restore_val: int = GUIDED_ARRAY[guided_index] if guided_index < GUIDED_ARRAY.size() else 0
+			var tw: Tween = array_system.create_tween()
+			if tw != null:
+				tw.tween_interval(1.35)
+				tw.tween_callback(func():
+					if state == State.GUIDED_COMPARE_SHOW and array_system and array_system.has_method("show_lab_compare"):
+						array_system.show_lab_compare(restore_idx, restore_val, GUIDED_TARGET)
+				)
+		return
+
+	## Clicking the active shelf re-shows / reinforces the same question
+	_p2_present_current_compare()
 
 
 func _p2_handle_compare_quiz(action: String):
@@ -643,6 +671,17 @@ func _p2_handle_compare_quiz(action: String):
 		# Result already shown — student pressed SPACE/click to advance
 		if action == "START":
 			_p2_after_comparison()
+		return
+
+	## After wrong-answer feedback, try-again restores the lab decision
+	if action == "START":
+		if array_system and array_system.has_method("show_lab_compare"):
+			array_system.show_lab_compare(index, value, GUIDED_TARGET)
+		game_ui.show_lab_decision(
+			"Look at the board — same number as the target?",
+			"✅  MATCH",
+			"➡️  KEEP SEARCHING"
+		)
 		return
 
 	# Student answering the quiz
@@ -707,12 +746,10 @@ func _p2_handle_compare_quiz(action: String):
 
 
 func _p2_after_comparison():
-	hide_panel()
 	var found := (_guided_pending_value == GUIDED_TARGET)
 	_guided_quiz_answered = false
 
 	if found:
-		# Show the important conceptual moment (Spec §37)
 		state = State.REFLECT_QUIZ
 		game_ui.show_success_message(GUIDED_TARGET, _guided_pending_index, guided_comparisons)
 	else:
@@ -721,10 +758,14 @@ func _p2_after_comparison():
 			state = State.REFLECT_QUIZ
 			game_ui.show_failure_message(GUIDED_TARGET, guided_comparisons)
 		else:
-			state = State.GUIDED_SEARCHING
-			game_ui.set_step("→  Now click Index %d (value = %d)" % [guided_index, GUIDED_ARRAY[guided_index]])
+			## Advance pointer on the array, then auto-open the next question
+			if array_system:
+				array_system.current_search_index = guided_index
+				if array_system.has_method("update_active_element"):
+					array_system.update_active_element()
 			_update_guided_bar()
 			_reset_hints()
+			_p2_present_current_compare()
 
 
 # ═══════════════════════════════════════════════════════════
@@ -735,14 +776,16 @@ func _p3_show_reflection():
 	state = State.REFLECT_QUIZ
 	game_ui.set_step("Reflection Question")
 	game_ui.set_formula("Think about what you just experienced...")
-	game_ui.show_choice_message(
-		"CODA: \"Great work! Now a quick question...\"\n\n"
-		+ "WHY did Linear Search start at INDEX 0?",
-		[
-			"Because it must check from the beginning to guarantee nothing is missed",
-			"Because index 0 is always the fastest to reach",
-			"Because Linear Search always skips the first element"
-		]
+	if array_system and array_system.has_method("set_array_texts"):
+		array_system.set_array_texts(
+			"WHY INDEX 0?",
+			"Think about the scan you just walked"
+		)
+	game_ui.show_lab_decision(
+		"Why did Linear Search start at the first shelf?",
+		"✅  So nothing is missed — check in order",
+		"Index 0 is always the fastest",
+		"Linear Search skips the first shelf"
 	)
 
 
@@ -798,10 +841,12 @@ func _update_practice_bar():
 func _p4_element_clicked(index: int, value: int):
 	# Enforce sequential order — this is the core teaching mechanic
 	if index != practice_index:
-		game_ui.show_choice_feedback(
-			("Hint: Linear Search is at INDEX %d.\n\n"
-			+ "Click the GLOWING element — not Index %d.") % [practice_index, index]
-		)
+		if array_system and array_system.search_feedback and array_system.search_feedback.has_method("show_order_lock"):
+			array_system.search_feedback.show_order_lock(practice_index, index)
+		if game_ui and game_ui.has_method("flash_lab_nudge"):
+			game_ui.flash_lab_nudge("Click the glowing shelf — INDEX %d" % practice_index)
+		else:
+			game_ui.set_hint("Click the glowing shelf — INDEX %d (not %d)" % [practice_index, index])
 		return
 
 	practice_comparisons += 1
@@ -903,9 +948,10 @@ func _p4b_begin():
 
 func _p4b_element_clicked(index: int, value: int):
 	if index != not_found_index:
-		game_ui.show_choice_feedback(
-			"Linear Search is at INDEX %d.\nClick the GLOWING element." % not_found_index
-		)
+		if array_system and array_system.search_feedback and array_system.search_feedback.has_method("show_order_lock"):
+			array_system.search_feedback.show_order_lock(not_found_index, index)
+		if game_ui and game_ui.has_method("flash_lab_nudge"):
+			game_ui.flash_lab_nudge("Click the glowing shelf — INDEX %d" % not_found_index)
 		return
 
 	not_found_comparisons += 1
@@ -1191,9 +1237,10 @@ func _p8b_begin_search():
 
 func _p8b_element_clicked(index: int, value: int):
 	if index != challenge_index:
-		game_ui.show_choice_feedback(
-			"Linear Search is at INDEX %d. Click the GLOWING element." % challenge_index
-		)
+		if array_system and array_system.search_feedback and array_system.search_feedback.has_method("show_order_lock"):
+			array_system.search_feedback.show_order_lock(challenge_index, index)
+		if game_ui and game_ui.has_method("flash_lab_nudge"):
+			game_ui.flash_lab_nudge("Click the glowing shelf — INDEX %d" % challenge_index)
 		return
 
 	challenge_comparisons += 1
@@ -1338,6 +1385,19 @@ func handle_action(action: String):
 					"CODA: \"Not quite! Linear Search always begins at INDEX 0.\"\n\n"
 					+ "If we started at the middle or end, we would skip elements "
 					+ "and might miss the target entirely. Always start from the BEGINNING!"
+				)
+			elif action == "START":
+				## After "Try again" / SPACE — re-show lab start decision
+				if array_system and array_system.has_method("set_array_texts"):
+					array_system.set_array_texts(
+						"START THE SCAN",
+						"Which shelf do we check first?"
+					)
+				game_ui.show_lab_decision(
+					"Linear Search always walks left → right. Where do we start?",
+					"✅  First shelf (INDEX 0)",
+					"Middle shelf",
+					"Biggest-looking shelf"
 				)
 
 		State.GUIDED_COMPARE_SHOW:
@@ -1485,12 +1545,22 @@ func element_selected(index: int, value: int):
 			if index == 0:
 				_p2_begin_search()
 			else:
-				game_ui.show_choice_feedback(
-					"CODA: \"Answer the question first! "
-					+ "Where should Linear Search begin?\""
+				if array_system and array_system.search_feedback and array_system.search_feedback.has_method("show_order_lock"):
+					array_system.search_feedback.show_order_lock(0, index)
+				if game_ui and game_ui.has_method("flash_lab_nudge"):
+					game_ui.flash_lab_nudge("Start at INDEX 0 — pick First shelf below")
+				game_ui.show_lab_decision(
+					"Linear Search always walks left → right. Where do we start?",
+					"✅  First shelf (INDEX 0)",
+					"Middle shelf",
+					"Biggest-looking shelf"
 				)
 
 		State.GUIDED_SEARCHING:
+			_p2_element_clicked(index, value)
+
+		State.GUIDED_COMPARE_SHOW:
+			## Clicks during compare: reinforce order / re-show lab action (never skip ahead)
 			_p2_element_clicked(index, value)
 
 		State.PRACTICE_SEARCHING:
@@ -1501,3 +1571,7 @@ func element_selected(index: int, value: int):
 
 		State.CHALLENGE_SEARCHING:
 			_p8b_element_clicked(index, value)
+
+		_:
+			## Dialogue / results — ignore world clicks so students use dock actions
+			pass

@@ -1,13 +1,18 @@
 {
 	"mcpServers": {
 		"godot-mcp-toolkit": {
+			"command": "cmd",
 			"args": [
+				"/c",
+				"npx",
 				"-y",
 				"@npgamedev/godot-mcp-server"
 			],
-			"command": "npx",
+			"cwd": "c:\\Users\\kpaul\\OneDrive\\Desktop\\GoDotProjects_GPU\\new-game-project-dsa",
 			"env": {
-				"GODOT_MCP_CONFIG_VERSION": "1"
+				"GODOT_MCP_CONFIG_VERSION": "1",
+				"GODOT_MCP_PROJECT_PATH": "c:\\Users\\kpaul\\OneDrive\\Desktop\\GoDotProjects_GPU\\new-game-project-dsa",
+				"GODOT_MCP_EDITOR_PORT": "6550"
 			}
 		}
 	}

@@ -26,8 +26,12 @@ Build a **VR learning game** so students understand code **logically** and **ima
 
 ---
 
+## Also read (fresh code analysis)
+
+- **`../ANALYSIS_AND_PLAN.md`** — current code analysis + recommended build plan (start here after the 3 team docs if you want the “what exists vs what to do next” summary).
+
 ## Note about older docs
 
-Files under `docs/` (overview / glitches / roadmap) describe the **current prototype spike**.  
+Files under `docs/` (overview / glitches / roadmap / analysis) describe the **current prototype spike**.  
 Files under `docs/team/` define the **intended product direction**.  
-When they conflict, **team planning docs win**.
+When they conflict, **team planning docs win** for vision; `ANALYSIS_AND_PLAN.md` wins for **code reality**.

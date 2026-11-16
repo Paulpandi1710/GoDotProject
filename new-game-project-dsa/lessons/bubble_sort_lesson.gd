@@ -148,31 +148,15 @@ func _process(delta):
 
 # ─── INTERACTIVE LAB CONTROLS ───
 func step_interactive():
-	if state == State.GUIDED_SWAP_QUESTION:
-		var el1 = guided_array[guided_j]
-		var el2 = guided_array[guided_j + 1]
-		if el1 > el2:
-			handle_action("FIRST")
-		else:
-			handle_action("MIDDLE")
-		return
-	elif state == State.GUIDED_AFTER_DECISION:
-		handle_action("START")
-		return
-	elif state == State.GUIDED_PASS_COMPLETE:
-		handle_action("START")
-		return
-	elif state == State.PRACTICE_SWAP_QUESTION:
-		var el1 = practice_array[practice_j]
-		var el2 = practice_array[practice_j + 1]
-		if el1 > el2:
-			handle_action("FIRST")
-		else:
-			handle_action("MIDDLE")
-		return
-	elif state == State.PRACTICE_AFTER_DECISION:
-		handle_action("START")
-		return
+	## PLAY/STEP never auto-answers YES/NO quizzes — only runs Interactive Lab sandbox.
+	match state:
+		State.GUIDED_SWAP_QUESTION, State.PRACTICE_SWAP_QUESTION, \
+		State.GUIDED_AFTER_DECISION, State.PRACTICE_AFTER_DECISION, \
+		State.GUIDED_PASS_COMPLETE, State.PRACTICE_PASS_COMPLETE:
+			if game_ui and game_ui.has_method("set_hint"):
+				game_ui.set_hint("Answer in the panel (YES/NO or SPACE). PLAY is for the Interactive Lab only.")
+			set_auto_play(false)
+			return
 
 	# General Sandbox Bubble Sort Step
 	if interactive_array.is_empty():
@@ -976,19 +960,16 @@ func handle_action(action: String):
 # ═══════════════════════════════════════════════════════════
 
 func element_selected(index: int, value: int):
-	var arr = guided_array if current_mode == "GUIDED" else practice_array
 	var j_idx = guided_j if current_mode == "GUIDED" else practice_j
 
 	match state:
 		State.GUIDED_SWAP_QUESTION, State.PRACTICE_SWAP_QUESTION:
-			if index == j_idx or index == j_idx + 1:
-				if arr[j_idx] > arr[j_idx + 1]:
-					_do_swap()
+			## Shelf click only focuses the pair — student must answer YES/NO (or 1/2).
+			if game_ui and game_ui.has_method("set_hint"):
+				if index == j_idx or index == j_idx + 1:
+					game_ui.set_hint("These are the shelves being compared. Choose YES (swap) or NO (keep) — don't guess by clicking!")
 				else:
-					_no_swap()
-			else:
-				if game_ui and game_ui.has_method("set_hint"):
-					game_ui.set_hint("Comparing Shelf %d and %d (amber glow). Click them or choose YES/NO!" % [j_idx, j_idx + 1])
+					game_ui.set_hint("Comparing Shelf %d and %d (amber glow). Answer YES or NO in the panel!" % [j_idx, j_idx + 1])
 
 		State.GUIDED_FEEDBACK, State.PRACTICE_FEEDBACK:
 			hide_panel()

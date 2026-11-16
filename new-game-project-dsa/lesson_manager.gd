@@ -1,7 +1,6 @@
 ## ============================================================
-## LESSON MANAGER
-## Orchestrates all lessons in sequence, showing a chapter
-## transition screen between them.
+## LESSON MANAGER — Module 1 only
+## Hub + chapter playlist + unlocks + story vs single-chapter play
 ## ============================================================
 
 extends Node
@@ -12,40 +11,45 @@ var game_ui
 
 var current_lesson_index: int = 0
 
+## Story Mode: Chapter 1 → 2 → 3 with transitions.
+## Single-chapter hub picks return to hub after finish.
+var story_mode: bool = false
+
 ## Each entry: [script_path, chapter_label, chapter_title, subtitle, accent_color]
 const LESSON_PLAYLIST := [
 	[
 		"res://lessons/linear_search_lesson.gd",
 		"Chapter 1",
 		"Linear Search",
-		"CODA checks every shelf, one by one.",
+		"Find the lost file — check every shelf, one by one.",
 		Color(0.0, 0.75, 1.0)
 	],
 	[
 		"res://lessons/binary_search_lesson.gd",
 		"Chapter 2",
 		"Binary Search",
-		"A sorted archive means CODA can cut the search in half!",
+		"Sorted shelves let CODA cut the search in half!",
 		Color(0.65, 0.25, 1.0)
 	],
 	[
 		"res://lessons/bubble_sort_lesson.gd",
 		"Chapter 3",
 		"Bubble Sort",
-		"The archive is scrambled — CODA must fix it!",
+		"The Scramble Fault disordered the Archive — restore order!",
 		Color(1.0, 0.55, 0.0)
 	],
 ]
 
 var active_lesson: Lesson = null
 var in_hub: bool = true
+var is_transitioning: bool = false
 
 func _ready():
 	add_to_group("lesson_manager")
 
 func setup(array_ref, ui_ref):
 	array_system = array_ref
-	game_ui      = ui_ref
+	game_ui = ui_ref
 	if game_ui:
 		if not game_ui.deck_step_requested.is_connected(_on_deck_step):
 			game_ui.deck_step_requested.connect(_on_deck_step)
@@ -61,6 +65,30 @@ func setup(array_ref, ui_ref):
 			game_ui.deck_randomize_requested.connect(_on_deck_randomize)
 		if not game_ui.ribbon_element_clicked.is_connected(_on_ribbon_clicked):
 			game_ui.ribbon_element_clicked.connect(_on_ribbon_clicked)
+
+func _progress():
+	return get_node_or_null("/root/ProgressManager")
+
+func can_launch(index: int) -> bool:
+	var pm = _progress()
+	if pm == null:
+		return index == 0
+	return pm.is_chapter_unlocked(index)
+
+func try_launch_lesson(index: int) -> bool:
+	if not can_launch(index):
+		var pm = _progress()
+		var hint := "Complete the previous chapter first."
+		if pm and pm.has_method("get_unlock_hint"):
+			hint = pm.get_unlock_hint(index)
+		if game_ui and game_ui.has_method("show_choice_message"):
+			game_ui.show_choice_message(
+				"CODA: \"Not yet, Trainee.\"\n\n%s\n\nWalk the Archive in order — Linear Search first." % hint,
+				["Back to Hub"]
+			)
+		return false
+	launch_lesson(index)
+	return true
 
 func _on_deck_step():
 	if active_lesson and active_lesson.has_method("step_interactive"):
@@ -115,6 +143,7 @@ func start_lesson():
 func start_hub():
 	in_hub = true
 	is_transitioning = false
+	story_mode = false
 
 	if active_lesson != null:
 		if active_lesson.lesson_finished.is_connected(_on_lesson_finished):
@@ -135,10 +164,36 @@ func start_hub():
 		var world = get_tree().get_first_node_in_group("dsa_world")
 		if world and world.has_method("set_hub_active"):
 			world.set_hub_active(true)
+		if world and world.has_method("refresh_hub_unlock_labels"):
+			world.refresh_hub_unlock_labels()
+
+	_maybe_show_opening()
+
+func _maybe_show_opening():
+	var pm = _progress()
+	if pm == null or pm.seen_opening:
+		return
+	pm.seen_opening = true
+	pm.save_progress()
+	if game_ui and game_ui.has_method("show_choice_message"):
+		game_ui.show_choice_message(
+			"Welcome to DSA Academy, Trainee.\n\n"
+			+ "I'm CODA — your Archive Robot.\n"
+			+ "Last night, a Scramble Fault hit the Quantum Archive. Files are scattered, and some shelves are out of order.\n\n"
+			+ "Together we'll learn how computers search and sort — one shelf at a time.\n"
+			+ "Start with Chapter 1: Linear Search (press 1 or click the cyan pedestal).",
+			["I'm ready"]
+		)
 
 func launch_lesson(index: int):
+	if not can_launch(index):
+		try_launch_lesson(index)
+		return
+
 	in_hub = false
 	current_lesson_index = index
+	## Chapter 1 starts Story Mode (auto-continue). Later chapters from hub are single play.
+	story_mode = (index == 0)
 
 	if game_ui:
 		if game_ui.has_method("hide_hub"):
@@ -163,7 +218,6 @@ func load_lesson(index: int):
 		_show_all_complete()
 		return
 
-	# Free previous lesson
 	if active_lesson != null:
 		active_lesson.queue_free()
 		active_lesson = null
@@ -185,20 +239,14 @@ func load_lesson(index: int):
 	active_lesson.lesson_finished.connect(_on_lesson_finished)
 	active_lesson.start_lesson()
 
-var is_transitioning: bool = false
-
 func handle_action(action: String):
 	if is_transitioning:
 		return
 	if in_hub:
-		if action == "FIRST":
-			launch_lesson(0)
-		elif action == "MIDDLE":
-			launch_lesson(1)
-		elif action == "LAST":
-			launch_lesson(2)
-		elif action == "START":
-			launch_lesson(0)
+		## Opening / lock / badge panels: close, then wait for pedestal or [1][2][3].
+		if action == "FIRST" or action == "START" or action == "MIDDLE" or action == "LAST":
+			if game_ui and game_ui.has_method("hide_panel"):
+				game_ui.hide_panel()
 		return
 	if current_lesson_index >= LESSON_PLAYLIST.size():
 		return_to_hub()
@@ -223,59 +271,78 @@ func _on_lesson_finished():
 		return
 	is_transitioning = true
 
-	# Disconnect from old lesson immediately to prevent duplicate emits
 	if active_lesson != null and active_lesson.lesson_finished.is_connected(_on_lesson_finished):
 		active_lesson.lesson_finished.disconnect(_on_lesson_finished)
 
-	current_lesson_index += 1
+	var finished_index := current_lesson_index
+	var pm = _progress()
+	if pm and pm.has_method("mark_chapter_complete"):
+		pm.mark_chapter_complete(finished_index)
+
+	## Single-chapter hub play → return to hub, then show badge
+	if not story_mode:
+		is_transitioning = false
+		return_to_hub()
+		if game_ui and game_ui.has_method("show_choice_message"):
+			var badge := "Chapter Clear"
+			if pm and finished_index < pm.BADGE_NAMES.size():
+				badge = str(pm.BADGE_NAMES[finished_index])
+			game_ui.show_choice_message(
+				"CODA: \"Chapter complete! Badge unlocked: %s.\"\n\nPress SPACE when you're ready." % badge,
+				["Back to Hub"]
+			)
+		return
+
+	current_lesson_index = finished_index + 1
 	if current_lesson_index >= LESSON_PLAYLIST.size():
 		_show_all_complete()
 		is_transitioning = false
 		return
 
-	# Show dramatic transition, then load next lesson
 	var entry = LESSON_PLAYLIST[current_lesson_index]
 	if game_ui and game_ui.has_method("show_chapter_transition"):
 		game_ui.show_chapter_transition(
 			str(entry[1]), str(entry[2]), str(entry[3]), entry[4]
 		)
 		await game_ui.chapter_transition_finished
-	
+
 	load_lesson(current_lesson_index)
 	is_transitioning = false
 
 func _show_all_complete():
+	story_mode = false
+	var pm = _progress()
+	if pm:
+		pm.module1_complete = true
+		pm.save_progress()
+
 	if game_ui:
-		game_ui.set_lesson("DSA Academy")
-		game_ui.set_objective("All chapters complete! 🎓")
+		game_ui.set_lesson("DSA Academy — Module 1")
+		game_ui.set_objective("Module 1 complete")
 		game_ui.show_choice_message(
-			"CODA: \"You did it! You completed all three chapters of the DSA Academy!\"\n\n"
-			+ "🔍  Linear Search  — check every element (O(n))\n"
-			+ "⚡  Binary Search  — halve the search space each time (O(log n))\n"
-			+ "🔄  Bubble Sort    — compare neighbours to sort (O(n²))\n\n"
-			+ "\"You're ready to tackle the pending algorithms and advanced data structures!\"",
-			["Return to Nexus Hub 🌐"]
+			"CODA: \"Module 1: Foundations — cleared.\"\n\n"
+			+ "You restored the Quantum Archive.\n\n"
+			+ "🔍  Linear Search — check every element (O(n))\n"
+			+ "⚡  Binary Search — halve the search space (O(log n))\n"
+			+ "🔄  Bubble Sort — swap neighbours to sort (O(n²))\n\n"
+			+ "Golden rule: Search power depends on data order.\n"
+			+ "Sorting is how we create that order.\n\n"
+			+ "Clearance: Archive Operator — Rank 1.\n"
+			+ "Future modules stay locked until we build them.",
+			["Return to Hub"]
 		)
 
-
-# ============================================================
-# RESTART CURRENT LESSON (Spec §104)
-# ============================================================
-
 func restart_current_lesson():
-	if is_transitioning:
+	if is_transitioning or in_hub:
 		return
 
-	# Free current lesson
 	if active_lesson != null:
 		if active_lesson.lesson_finished.is_connected(_on_lesson_finished):
 			active_lesson.lesson_finished.disconnect(_on_lesson_finished)
 		active_lesson.queue_free()
 		active_lesson = null
 
-	# Hide any open UI panels
 	if game_ui and game_ui.has_method("hide_panel"):
 		game_ui.hide_panel()
 
-	# Reload the same lesson
 	load_lesson(current_lesson_index)

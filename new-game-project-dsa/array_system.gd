@@ -82,8 +82,9 @@ var is_binary_search: bool = false
 var left_bound: int = 0
 var right_bound: int = 0
 
-const INFO_Z: float = -0.75
-const FEEDBACK_Y: float = 2.85
+## In front of shelves (camera-facing) so the board never sits dull/hidden behind them
+const INFO_Z: float = 0.85
+const FEEDBACK_Y: float = 3.45
 
 # ============================================================
 # READY & PROCESS
@@ -633,15 +634,15 @@ func create_element(index: int, value, element_position: Vector3):
 	var compare_label := Label3D.new()
 	compare_label.name = "CompareText"
 	compare_label.text = ""
-	compare_label.font_size = 32
-	compare_label.modulate = Color(0.85, 0.95, 1.0)
-	compare_label.outline_size = 10
+	compare_label.font_size = 40
+	compare_label.modulate = Color(1.0, 0.9, 0.2)
+	compare_label.outline_size = 14
 	compare_label.outline_modulate = Color(0.01, 0.03, 0.07)
 	compare_label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 	compare_label.no_depth_test = true
-	compare_label.render_priority = 10
-	compare_label.pixel_size = 0.0022
-	compare_label.position = Vector3(0, -0.44, front_z)
+	compare_label.render_priority = 20
+	compare_label.pixel_size = 0.0028
+	compare_label.position = Vector3(0, -0.40, front_z)
 	body.add_child(compare_label)
 
 	# Base accent line
@@ -704,6 +705,7 @@ func update_active_element():
 			else:
 				_apply_active_candidate_style(element, i == current_search_index, i == left_bound, i == right_bound)
 		else:
+			## Strict linear order: ONLY the current shelf is clickable
 			if i == current_search_index:
 				mesh.material_override = active_material
 				if collision: collision.disabled = false
@@ -712,13 +714,13 @@ func update_active_element():
 					compare_label.text = "SCANNING"
 			elif i < current_search_index:
 				mesh.material_override = checked_material
-				if collision: collision.disabled = false
+				if collision: collision.disabled = true
 				if compare_label:
 					compare_label.modulate = Color(0.2, 1.0, 0.45)
 					compare_label.text = "✓ CHECKED"
 			else:
 				mesh.material_override = locked_material
-				if collision: collision.disabled = false
+				if collision: collision.disabled = true
 				if compare_label:
 					compare_label.modulate = Color(0.65, 0.72, 0.85)
 					compare_label.text = "🔒 LOCKED"
@@ -804,12 +806,20 @@ func _apply_active_candidate_style(element: Node3D, is_mid: bool, is_left: bool,
 func on_element_hover(element):
 	if element == null or search_completed or transition_in_progress:
 		return
+	var index: int = int(element.get_meta("array_index", -1))
+	## Only the active shelf reacts to hover — locked shelves stay locked
+	if not is_binary_search and not is_sorting_mode and index != current_search_index:
+		return
 	var mesh = element.get_node_or_null("ElementBody")
 	if mesh:
 		mesh.material_override = hover_material
 
 func on_element_unhover(element):
 	if element == null:
+		return
+	## Restore correct locked/checked/active look (don't wipe to normal)
+	if not is_binary_search and not is_sorting_mode:
+		update_active_element()
 		return
 	var index: int = int(element.get_meta("array_index", -1))
 	var mesh = element.get_node_or_null("ElementBody")
@@ -829,6 +839,20 @@ func interact_with_element(element):
 
 	var index: int = int(element.get_meta("array_index", -1))
 	var value = element.get_meta("array_value", 0)
+
+	## Hard block ahead-of-order clicks in linear mode (even if collision somehow enabled)
+	if not is_binary_search and not is_sorting_mode and search_started and not search_completed:
+		if index != current_search_index:
+			if search_feedback and search_feedback.has_method("show_order_lock"):
+				search_feedback.visible = true
+				search_feedback.show_order_lock(current_search_index, index)
+			var audio_block = get_node_or_null("/root/AudioManager")
+			if audio_block != null and audio_block.has_method("play_wrong_sound"):
+				audio_block.play_wrong_sound()
+			var lesson_managers_block = get_tree().get_nodes_in_group("lesson_manager")
+			if lesson_managers_block.size() > 0 and lesson_managers_block[0].has_method("element_selected"):
+				lesson_managers_block[0].element_selected(index, value)
+			return
 
 	# Sound feedback
 	var audio = get_node_or_null("/root/AudioManager")
@@ -1021,11 +1045,20 @@ func set_status_text(text: String, color: Color = Color(0.0, 0.85, 1.0)):
 
 func set_array_texts(title: String, desc: String):
 	if search_feedback:
+		search_feedback.visible = true
 		search_feedback.set_prompt(title, desc)
 
-func show_3d_question(_title: String, _question_text: String, _options: Array, _color: Color = Color(0.0, 0.9, 1.0)):
-	# Questions must NOT be showcased on the 3D array box.
-	hide_3d_question()
+## Bright lab compare: board above shelves + label on the active shelf
+func show_lab_compare(index: int, value: int, target: int):
+	if search_feedback and search_feedback.has_method("show_lab_compare"):
+		search_feedback.visible = true
+		search_feedback.show_lab_compare(value, target, index)
+	set_element_compare_text(index, "%d ≟ %d" % [value, target], Color(1.0, 0.9, 0.15))
+
+func show_3d_question(title: String, question_text: String, options: Array, color: Color = Color(0.0, 0.9, 1.0)):
+	if search_feedback and search_feedback.has_method("show_3d_question"):
+		search_feedback.visible = true
+		search_feedback.show_3d_question(title, question_text, options, color)
 
 func hide_3d_question():
 	if search_feedback and search_feedback.has_method("clear_3d_question"):
@@ -1038,6 +1071,8 @@ func set_element_compare_text(index: int, text: String, color: Color = Color(1, 
 			if label:
 				label.text = text
 				label.modulate = color
+				label.font_size = 48
+				label.outline_size = 14
 			break
 
 func set_element_state(index: int, state: String):
